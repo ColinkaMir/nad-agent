@@ -507,8 +507,16 @@ const MAX_TOKEN_ID = (1n << 256n) - 1n;
  * wrong-owner refusal, and a second unescaped echo is not something to add here.
  */
 function requireTokenId(tokenId) {
+  // A number is only usable when it is a safe integer. Past 2^53 a JSON number no longer
+  // carries the id it was written as, so accepting one here would encode a token nobody named,
+  // exactly as an empty string used to encode token #0. Strings and bigints keep the full
+  // uint256 range: "9007199254740993" is a legal id and stays one.
   const usable =
-    typeof tokenId === "string" ? tokenId.trim() !== "" : typeof tokenId === "number" || typeof tokenId === "bigint";
+    typeof tokenId === "string"
+      ? tokenId.trim() !== ""
+      : typeof tokenId === "number"
+        ? Number.isSafeInteger(tokenId)
+        : typeof tokenId === "bigint";
   if (usable) {
     try {
       const id = BigInt(tokenId);
@@ -517,7 +525,10 @@ function requireTokenId(tokenId) {
       /* not a number in any notation — falls through to the refusal */
     }
   }
-  throw new Error("Refused: tokenId must be a whole number from 0 to 2^256-1.");
+  throw new Error(
+    "Refused: tokenId must be a whole number from 0 to 2^256-1; " +
+      "pass ids above 2^53 as a decimal or hex string.",
+  );
 }
 
 /**
