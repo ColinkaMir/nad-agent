@@ -912,6 +912,9 @@ export async function runAction(a, resolved, opts = {}) {
   // unchanged. It does not widen what runAction is trusted with: preparedToken, already
   // accepted here, carries the address and amount that get signed.
   const sendToken = opts.sendToken ?? wallet.sendToken;
+  // Same seam, same reason, for the NFT path: the guard added below refuses before the wallet
+  // is touched, and nothing could observe that ordering while transferNft was called directly.
+  const transferNft = opts.transferNft ?? wallet.transferNft;
   // Read `resolved.address` once, here, and use that copy everywhere below: a getter or a
   // Proxy that answers the check with a valid address and the signature with another one is
   // otherwise free to do so. Padding is refused rather than trimmed, because isAddress()
@@ -1039,6 +1042,17 @@ export async function runAction(a, resolved, opts = {}) {
       if (a.tokenId === undefined || a.tokenId === null || String(a.tokenId).trim() === "") {
         return "Refused: no tokenId given.";
       }
+      // A JSON number loses token-id precision inside JSON.parse, before any line here runs:
+      // 9007199254740993 arrives as 9007199254740992, and the String() below then turns it into
+      // a perfectly ordinary decimal id that requireTokenId accepts and the encoder signs. The
+      // digit cannot be recovered after the parse, so the only honest answer is a refusal, and
+      // it has to come before the coercion rather than after it.
+      if (typeof a.tokenId === "number" && !Number.isSafeInteger(a.tokenId)) {
+        return (
+          "Refused: that tokenId is past the range a JSON number carries exactly — " +
+          "pass large ids as a decimal or hex string."
+        );
+      }
       // `fromAddress` is optional — it only matters when the agent transfers an NFT it holds
       // an approval on rather than one it owns. But it is model output like `contract` and
       // `tokenId` above, and it was the one field on this path reaching ethers unchecked: a
@@ -1061,7 +1075,7 @@ export async function runAction(a, resolved, opts = {}) {
           return `Refused: "${safeEcho(fromAddress)}" is not a valid fromAddress.`;
         }
       }
-      const res = await wallet.transferNft(to, contract, String(a.tokenId), fromAddress);
+      const res = await transferNft(to, contract, String(a.tokenId), fromAddress);
       const label = `#${a.tokenId} (${contract})`;
 
       if (res.dryRun) {
