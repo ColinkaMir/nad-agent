@@ -50,11 +50,38 @@ describe("loadPolicy — an explicit override that is not there", () => {
     assert.equal(loadPolicy(join(DIR, "no-default-here", "policy.json")), null);
   });
 
-  it("treats an empty or blank override as no override", () => {
-    for (const value of ["", "   "]) {
-      process.env.NAD_POLICY = value;
-      assert.equal(loadPolicy(join(DIR, "no-default-here", "policy.json")), null);
+  it("treats only a completely empty override as no override", () => {
+    // Driven through the environment on purpose. An earlier version of this test passed an
+    // explicit path argument, which takes the other branch entirely and proved nothing about
+    // the environment selection it claimed to cover.
+    process.env.NAD_POLICY = "";
+    assert.equal(loadPolicy(), null, "an empty override falls back to the optional default");
+  });
+
+  it("refuses a whitespace-only override, because it is a path that is not there", () => {
+    // A blank string is not "no override": it is a path the operator typed. #108 asks for a
+    // nonempty override naming a missing file to stop startup, and "   " is nonempty.
+    process.env.NAD_POLICY = "   ";
+    assert.throws(() => loadPolicy(), /does not exist/);
+  });
+
+  it("opens the configured path literally, whitespace and all", (t) => {
+    // The review case: two files one trailing space apart. Trimming the configured value opens
+    // the wrong one and silently drops every rule the operator meant to apply.
+    if (process.platform === "win32") {
+      t.skip("Win32 strips trailing spaces from path components");
+      return;
     }
+    const plain = join(DIR, "pair.json");
+    const spaced = `${plain} `;
+    writeFileSync(plain, JSON.stringify({}));
+    writeFileSync(spaced, JSON.stringify({ maxPerSend: "0.5" }));
+
+    process.env.NAD_POLICY = spaced;
+    const policy = loadPolicy();
+
+    assert.equal(policy.path, spaced, "the file named is the file opened");
+    assert.ok(policy.maxPerSend > 0n, "the rules from the configured file have to survive");
   });
 
   it("still loads an override that exists", () => {

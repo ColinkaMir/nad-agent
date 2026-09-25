@@ -29,8 +29,13 @@ const DEFAULT_PATH = resolve(HERE, "..", "policy.json");
  * An explicit argument keeps its older meaning: the caller named the path and owns the result.
  */
 export function loadPolicy(path) {
-  const override = (process.env.NAD_POLICY ?? "").trim();
-  const selected = path ?? (override || DEFAULT_PATH);
+  // The value is used exactly as configured, never trimmed: a filesystem path may legitimately
+  // carry leading or trailing whitespace, and trimming it opens a DIFFERENT file. On Linux
+  // `policy.json ` and `policy.json` are two paths, so a trim could quietly swap a policy with
+  // rules for one without any. Only a completely empty value means "no override"; a blank one is
+  // a path the operator typed, and if nothing is there the startup has to say so.
+  const override = process.env.NAD_POLICY ?? "";
+  const selected = path ?? (override !== "" ? override : DEFAULT_PATH);
   const isOverride = path === undefined && override !== "";
   let raw;
   try {
